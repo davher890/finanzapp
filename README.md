@@ -95,6 +95,32 @@ En el emulador de Android usa `API_URL=http://10.0.2.2:3000`.
 
 Pantallas: login/registro, inicio (qué es FinanzApp), añadir cargos (manual o Excel), categorías (crear, conceptos, importar Metadata, asignar los "sin categoría"), meses (resumen tipo Agregado) y búsqueda por expresión regular.
 
+### APK de Android e instalación en el móvil
+
+Requisitos: Android SDK (`flutter doctor`) y el móvil con **Opciones de desarrollador → Depuración USB** activada, conectado por USB (acepta el aviso de "¿Permitir depuración USB?").
+
+```bash
+cd app
+
+# 1. Generar el APK apuntando a la API publicada
+flutter build apk --release --dart-define=API_URL=https://finanzapp-gold.vercel.app
+
+# 2. Comprobar que el móvil aparece
+flutter devices
+
+# 3. Instalarlo en el móvil conectado
+flutter install --release
+```
+
+El APK queda en `app/build/app/outputs/flutter-apk/app-release.apk`. También se puede instalar con `adb install -r build/app/outputs/flutter-apk/app-release.apk`, o copiarlo al móvil y abrirlo (hay que permitir "instalar apps de fuentes desconocidas").
+
+Notas:
+- `API_URL` se fija al compilar: si cambia la URL de la API, vuelve a generar el APK.
+- Usa la URL corta de producción de la API (`finanzapp-gold.vercel.app`); las URL `…-davher890s-projects.vercel.app` están protegidas por Vercel y la app no puede llamarlas.
+- El APK de release se firma con la clave de depuración (configuración por defecto de Flutter), válido para instalarlo en tus dispositivos pero no para publicarlo en Google Play.
+- El identificador de la app en Android es `com.davher890.finanzapp` (en `android/app/build.gradle.kts`). Android trata como la misma app cualquier APK con ese identificador: al instalar se actualiza la anterior, no se toca ninguna otra app.
+- Si una versión anterior de FinanzApp se firmó con otra clave y la instalación falla, desinstala solo FinanzApp: `adb uninstall com.davher890.finanzapp`.
+
 ## 4. Despliegue en Vercel
 
 Dos proyectos de Vercel apuntando al mismo repositorio:

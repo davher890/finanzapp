@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Capa delantera del icono adaptativo de Android (108 dp): € blanco dentro de la zona segura (66 dp) -->
+  <g transform="translate(256 256) scale(0.62) translate(-244 -256)" fill="none" stroke="#FFFFFF" stroke-linecap="round">
+    <path d="M 357 172 A 122 122 0 1 0 357 340" stroke-width="46"/>
+    <path d="M 132 226 H 296 M 132 290 H 276" stroke-width="36"/>
+  </g>
+</svg>
