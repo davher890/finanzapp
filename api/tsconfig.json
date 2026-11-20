@@ -7,8 +7,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "verbatimModuleSyntax": true,
-    "types": ["node"]
+    "verbatimModuleSyntax": true
   },
   "include": ["src", "test", "scripts"]
 }
