@@ -5,7 +5,9 @@ import { requireAuth, sb } from '../lib/auth.js';
 import { check, HttpError } from '../lib/supabase.js';
 import { loadCategories, loadCategorized, loadTransactions, TX_COLUMNS } from '../lib/data.js';
 import { categorize } from '../lib/categorize.js';
-import { parseTransactionsWorkbook, type ParsedTransaction } from '../lib/excel.js';
+import { parseTransactionsWorkbook } from '../lib/excel.js';
+import { normalizeCharge, splitNewCharges, type ChargeKeyFields } from '../lib/dedupe.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const transactionsRouter = Router();
 transactionsRouter.use(requireAuth);
@@ -36,16 +38,28 @@ transactionsRouter.get('/', async (req, res) => {
   res.json(transactions);
 });
 
+const DUPLICATE_MESSAGE = 'Ese cargo ya existe (misma fecha, movimiento, más datos, importe y saldo)';
+const isUniqueViolation = (e: { code?: string } | null) => e?.code === '23505';
+
+/** Busca un cargo idéntico (misma tupla única) del usuario. */
+async function findCharge(client: SupabaseClient<any, any, any>, t: ChargeKeyFields) {
+  let q = client.from('transactions').select('id').eq('date', t.date).eq('movement', t.movement).eq('amount', t.amount);
+  q = t.details == null ? q.is('details', null) : q.eq('details', t.details);
+  q = t.balance == null ? q.is('balance', null) : q.eq('balance', t.balance);
+  return (check(await q.limit(1), 500) ?? [])[0] as { id: number } | undefined;
+}
+
 transactionsRouter.post('/', async (req, res) => {
-  const body = transactionInput.parse(req.body);
+  const body = normalizeCharge(transactionInput.parse(req.body));
   const client = sb(req);
-  const created = check(
-    await client
-      .from('transactions')
-      .insert({ ...body, amount: round(body.amount), balance: body.balance == null ? null : round(body.balance), source: 'manual' })
-      .select(TX_COLUMNS)
-      .single(),
-  ) as any;
+  if (await findCharge(client, body)) throw new HttpError(409, DUPLICATE_MESSAGE);
+  const insert = await client
+    .from('transactions')
+    .insert({ ...body, source: 'manual' })
+    .select(TX_COLUMNS)
+    .single();
+  if (isUniqueViolation(insert.error)) throw new HttpError(409, DUPLICATE_MESSAGE);
+  const created = check(insert) as any;
   const [categorized] = categorize(
     [{ ...created, amount: Number(created.amount), balance: created.balance == null ? null : Number(created.balance) }],
     await loadCategories(client),
@@ -55,9 +69,9 @@ transactionsRouter.post('/', async (req, res) => {
 
 transactionsRouter.patch('/:id', async (req, res) => {
   const body = transactionInput.partial().parse(req.body);
-  const updated = check(
-    await sb(req).from('transactions').update(body).eq('id', id.parse(req.params.id)).select(TX_COLUMNS).maybeSingle(),
-  );
+  const result = await sb(req).from('transactions').update(body).eq('id', id.parse(req.params.id)).select(TX_COLUMNS).maybeSingle();
+  if (isUniqueViolation(result.error)) throw new HttpError(409, DUPLICATE_MESSAGE);
+  const updated = check(result);
   if (!updated) throw new HttpError(404, 'Cargo no encontrado');
   res.json(updated);
 });
@@ -67,14 +81,37 @@ transactionsRouter.delete('/:id', async (req, res) => {
   res.status(204).end();
 });
 
-const round = (n: number) => Math.round(n * 100) / 100;
-const keyOf = (t: { date: string; movement: string; amount: number; balance: number | null }) =>
-  `${t.date}|${t.movement.trim().toLowerCase()}|${round(t.amount).toFixed(2)}|${t.balance == null ? '' : round(t.balance).toFixed(2)}`;
+type Charge = ChargeKeyFields;
+
+/**
+ * Inserta los cargos por lotes. Si un lote choca con la restricción única (p. ej. dos subidas
+ * a la vez), se reintenta fila a fila y las que ya existen se cuentan como existentes.
+ */
+async function insertCharges(client: SupabaseClient<any, any, any>, rows: Charge[]) {
+  let inserted = 0;
+  let conflicts = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const chunk = rows.slice(i, i + 500).map((r) => ({ ...r, source: 'excel' }));
+    const { error } = await client.from('transactions').insert(chunk);
+    if (!error) {
+      inserted += chunk.length;
+      continue;
+    }
+    if (!isUniqueViolation(error)) throw new HttpError(500, error.message);
+    for (const row of chunk) {
+      const one = await client.from('transactions').insert(row);
+      if (!one.error) inserted++;
+      else if (isUniqueViolation(one.error)) conflicts++;
+      else throw new HttpError(500, one.error.message);
+    }
+  }
+  return { inserted, conflicts };
+}
 
 /**
  * Sube un Excel con cargos (formato "Total gastos": Fecha | Movimiento | Mas datos | Importe | Saldo).
- * Los cargos que ya existan (misma fecha, movimiento, importe y saldo) se omiten, así que se puede
- * volver a subir un extracto que se solape con uno anterior.
+ * Un cargo es único por (fecha, movimiento, más datos, importe, saldo): los que ya están en la base de
+ * datos o se repiten dentro del fichero se omiten, así que subir el mismo fichero dos veces no duplica nada.
  * Con ?dry_run=1 solo devuelve lo que se importaría.
  */
 transactionsRouter.post('/upload', upload.single('file'), async (req, res) => {
@@ -88,37 +125,26 @@ transactionsRouter.post('/upload', upload.single('file'), async (req, res) => {
   const client = sb(req);
   const dryRun = req.query.dry_run === '1' || req.query.dry_run === 'true';
 
-  let toInsert: ParsedTransaction[] = [];
-  let duplicates = 0;
+  let stored: Charge[] = [];
   if (parsed.rows.length) {
     const dates = parsed.rows.map((r) => r.date).sort();
-    const existing = await loadTransactions(client, { from: dates[0], to: dates[dates.length - 1] });
-    // Cuenta multiplicidades: si el banco repite exactamente la misma línea, se respeta.
-    const available = new Map<string, number>();
-    for (const t of existing) available.set(keyOf(t), (available.get(keyOf(t)) ?? 0) + 1);
-    for (const r of parsed.rows) {
-      const k = keyOf(r);
-      const n = available.get(k) ?? 0;
-      if (n > 0) {
-        available.set(k, n - 1);
-        duplicates++;
-      } else toInsert.push(r);
-    }
+    stored = await loadTransactions(client, { from: dates[0], to: dates[dates.length - 1] });
   }
+  const split = splitNewCharges(parsed.rows, stored);
 
-  if (!dryRun) {
-    for (let i = 0; i < toInsert.length; i += 500) {
-      const chunk = toInsert.slice(i, i + 500).map((r) => ({ ...r, source: 'excel' }));
-      check(await client.from('transactions').insert(chunk), 500);
-    }
-  }
+  let inserted = 0;
+  let conflicts = 0;
+  if (!dryRun) ({ inserted, conflicts } = await insertCharges(client, split.toInsert));
 
+  const existing = split.existing.length + conflicts;
   res.json({
     sheet: parsed.sheet,
     read: parsed.rows.length,
-    inserted: dryRun ? 0 : toInsert.length,
-    to_insert: toInsert.length,
-    duplicates,
+    inserted,
+    to_insert: dryRun ? split.toInsert.length : inserted,
+    existing,
+    repeated_in_file: split.repeated.length,
+    duplicates: existing + split.repeated.length,
     errors: parsed.errors.slice(0, 50),
     error_count: parsed.errors.length,
     dry_run: dryRun,

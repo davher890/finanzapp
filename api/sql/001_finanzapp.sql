@@ -44,7 +44,10 @@ create table if not exists finanzapp.transactions (
   amount      numeric(12, 2) not null,
   balance     numeric(12, 2),
   source      text not null default 'manual' check (source in ('manual', 'excel')),
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  -- Un cargo es único por usuario, fecha, movimiento, más datos, importe y saldo (ver 002).
+  constraint transactions_unique_charge
+    unique nulls not distinct (user_id, date, movement, details, amount, balance)
 );
 create index if not exists transactions_user_date_idx on finanzapp.transactions (user_id, date);
 

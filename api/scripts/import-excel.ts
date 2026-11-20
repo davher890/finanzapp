@@ -105,7 +105,8 @@ async function main() {
   const preview = await call('/transactions/upload?dry_run=1', { method: 'POST', body: form(bytes, name), token });
   console.log(
     `\nVista previa de la hoja "${preview.sheet}": ${preview.read} filas leídas, ` +
-      `${preview.to_insert} nuevas, ${preview.duplicates} ya existían, ${preview.error_count} con error`,
+      `${preview.to_insert} nuevas, ${preview.existing} ya existían, ${preview.repeated_in_file} repetidas en el fichero, ` +
+      `${preview.error_count} con error`,
   );
   for (const e of preview.errors) console.log(`   fila ${e.row}: ${e.message}`);
 
@@ -116,7 +117,7 @@ async function main() {
       process.exit(0);
     }
     const done = await call('/transactions/upload', { method: 'POST', body: form(bytes, name), token });
-    console.log(`✔ Importados ${done.inserted} cargos (${done.duplicates} ya existían)`);
+    console.log(`✔ Importados ${done.inserted} cargos (${done.existing} ya existían, ${done.repeated_in_file} repetidos en el fichero)`);
   } else {
     console.log('No hay cargos nuevos que importar.');
   }

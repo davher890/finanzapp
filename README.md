@@ -17,6 +17,8 @@ finanzapp/
 | Columna **Categoria** (`COUNTIF` sobre Metadata) | se calcula en la API: la primera categoría (por orden) con un concepto que coincide. Sin distinguir mayúsculas, con comodines `*` y `?`, espacios repetidos colapsados |
 | Pestaña **Agregado** | `GET /reports/summary/:mes` y pantalla **Meses** |
 
+**Cargos únicos.** Un cargo es único por `(usuario, fecha, movimiento, más datos, importe, saldo)`; la base de datos lo garantiza con la restricción `transactions_unique_charge` (un "más datos" o saldo vacío cuenta como igual a otro vacío). Al añadir un cargo a mano que ya existe, la API responde 409. Al subir un Excel se omiten los cargos que ya existen y las filas repetidas dentro del propio fichero, así que subir el mismo fichero dos veces no duplica nada.
+
 Tipos de categoría (sustituyen a los `">0"`/`"<0"` de las fórmulas de Agregado):
 
 - **gasto**: todo cuenta como gasto (una devolución reduce el gasto).
@@ -29,6 +31,7 @@ Al importar la pestaña Metadata, NOMINA se crea como *ingreso*, BIZUM y TRANSFE
 ## 1. Supabase
 
 1. En el **SQL Editor** del proyecto ejecuta [`api/sql/001_finanzapp.sql`](api/sql/001_finanzapp.sql). Crea el esquema `finanzapp`, las tablas, la vista `months` y las políticas RLS (cada usuario solo ve sus datos).
+   Si la base de datos se creó con una versión anterior de ese fichero, ejecuta también [`api/sql/002_transactions_unique.sql`](api/sql/002_transactions_unique.sql): borra cargos repetidos y añade la restricción de unicidad.
 2. En **Project Settings → API → Exposed schemas** (Data API) añade `finanzapp`.
 3. En **Authentication → Providers** deja activo *Email*. Si "Confirm email" está activado, tras registrarse hay que confirmar el correo antes de entrar.
 
@@ -72,7 +75,7 @@ FINANZAPP_TEST_XLSX=/ruta/Gastos.xlsx npm test        # además reproduce la pes
 | GET | `/transactions?month=YYYY-MM` | Cargos con su categoría |
 | POST | `/transactions` | Cargo manual `{date, movement, details?, amount, balance?}` |
 | PATCH / DELETE | `/transactions/:id` | Editar / borrar |
-| POST | `/transactions/upload[?dry_run=1]` | Subir Excel de cargos (multipart `file`); omite duplicados |
+| POST | `/transactions/upload[?dry_run=1]` | Subir Excel de cargos (multipart `file`); omite los que ya existen y los repetidos en el fichero |
 | GET | `/reports/months` | Meses con datos agrupados por año |
 | GET | `/reports/summary/:month` | Resumen tipo Agregado |
 | GET | `/reports/search?q=REGEX[&details=1]` | Búsqueda por expresión regular + total por mes |

@@ -305,8 +305,8 @@ class _ExcelUploadState extends State<_ExcelUpload> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Si subes un extracto que se solapa con otro anterior, los cargos que ya existen '
-                  '(misma fecha, movimiento, importe y saldo) no se duplican.',
+                  'Un cargo es único por fecha, movimiento, más datos, importe y saldo: los que ya existen '
+                  'o se repiten dentro del fichero se omiten, así que subir el mismo fichero dos veces no duplica nada.',
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 16),
@@ -336,7 +336,18 @@ class _ExcelUploadState extends State<_ExcelUpload> {
               icon: Icons.add_task,
               color: Colors.green.shade700,
             ),
-            StatCard(label: 'Ya existían', value: '${info['duplicates']}', icon: Icons.content_copy),
+            StatCard(
+              label: 'Ya existían',
+              value: '${info['existing'] ?? info['duplicates']}',
+              icon: Icons.content_copy,
+            ),
+            if (((info['repeated_in_file'] as int?) ?? 0) > 0)
+              StatCard(
+                label: 'Repetidas en el fichero',
+                value: '${info['repeated_in_file']}',
+                icon: Icons.copy_all,
+                footer: 'Solo se importa una vez',
+              ),
             StatCard(
               label: 'Filas con error',
               value: '${info['error_count']}',
