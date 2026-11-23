@@ -100,7 +100,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   Future<void> _import() async {
-    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['xlsx']);
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['xlsx', 'xls']);
     if (file == null) return;
     final bytes = await file.readAsBytes();
     await _guard(() async {

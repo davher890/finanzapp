@@ -17,6 +17,8 @@ finanzapp/
 | Columna **Categoria** (`COUNTIF` sobre Metadata) | se calcula en la API: la primera categoría (por orden) con un concepto que coincide. Sin distinguir mayúsculas, con comodines `*` y `?`, espacios repetidos colapsados |
 | Pestaña **Agregado** | `GET /reports/summary/:mes` y pantalla **Meses** |
 
+**Ficheros admitidos.** `.xlsx` y `.xls` (el extracto que descarga el banco, incluidos los `.xls` que en realidad son HTML). Se busca la fila con las cabeceras `Fecha`, `Movimiento`, `Más datos`, `Importe` y `Saldo` en las 15 primeras filas, así que puede haber títulos encima y columnas de más (como `Fecha valor`). Los textos en formato español (`-41,76`, `23/11/2026`) se interpretan correctamente.
+
 **Cargos únicos.** Un cargo es único por `(usuario, fecha, movimiento, más datos, importe, saldo)`; la base de datos lo garantiza con la restricción `transactions_unique_charge` (un "más datos" o saldo vacío cuenta como igual a otro vacío). Al añadir un cargo a mano que ya existe, la API responde 409. Al subir un Excel se omiten los cargos que ya existen y las filas repetidas dentro del propio fichero, así que subir el mismo fichero dos veces no duplica nada.
 
 Tipos de categoría (sustituyen a los `">0"`/`"<0"` de las fórmulas de Agregado):
@@ -71,11 +73,11 @@ FINANZAPP_TEST_XLSX=/ruta/Gastos.xlsx npm test        # además reproduce la pes
 | POST | `/categories/:id/concepts` | Añadir concepto `{pattern}` |
 | DELETE | `/categories/concepts/:id` | Quitar concepto |
 | GET | `/categories/uncategorized` | Movimientos sin categoría (OTROS) |
-| POST | `/categories/import` | Importar hoja Metadata (multipart `file`) |
+| POST | `/categories/import` | Importar la hoja `Metadata` de un .xlsx/.xls (multipart `file`) |
 | GET | `/transactions?month=YYYY-MM` | Cargos con su categoría |
 | POST | `/transactions` | Cargo manual `{date, movement, details?, amount, balance?}` |
 | PATCH / DELETE | `/transactions/:id` | Editar / borrar |
-| POST | `/transactions/upload[?dry_run=1]` | Subir Excel de cargos (multipart `file`); omite los que ya existen y los repetidos en el fichero |
+| POST | `/transactions/upload[?dry_run=1]` | Subir un .xlsx o .xls de cargos (multipart `file`); omite los que ya existen y los repetidos en el fichero |
 | GET | `/reports/months` | Meses con datos agrupados por año |
 | GET | `/reports/summary/:month` | Resumen tipo Agregado |
 | GET | `/reports/search?q=REGEX[&details=1]` | Búsqueda por expresión regular + total por mes |

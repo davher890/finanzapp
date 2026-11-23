@@ -1,8 +1,8 @@
 /**
- * Importa un Excel tipo "Gastos" en tu cuenta de FinanzApp pasando por la API:
- *   1. categorías y conceptos de la pestaña Metadata
+ * Importa un Excel (.xlsx o .xls) en tu cuenta de FinanzApp pasando por la API:
+ *   1. categorías y conceptos de la pestaña Metadata (si la tiene)
  *   2. cargos de la pestaña "Total gastos" (vista previa + confirmación)
- *   3. compara el resumen de cada mes con los valores de la pestaña "Agregado"
+ *   3. compara el resumen de cada mes con los valores de la pestaña "Agregado" (si la tiene)
  *
  * Uso:  npm run import -- "/ruta/Gastos.xlsx" [--api http://localhost:3000] [--email tu@email] [--yes]
  * La contraseña se pide por terminal y no se muestra.
@@ -95,8 +95,12 @@ async function main() {
   console.log(`✔ Sesión iniciada como ${session.user.email}\n`);
 
   // 1. Categorías
-  const cats = await call('/categories/import', { method: 'POST', body: form(bytes, name), token });
-  console.log(
+  const cats = await call('/categories/import', { method: 'POST', body: form(bytes, name), token }).catch((e: Error) => {
+    if (e.message.includes('Metadata')) return null; // p. ej. un extracto del banco: solo trae cargos
+    throw e;
+  });
+  if (!cats) console.log('· Sin hoja "Metadata": no se importan categorías');
+  else console.log(
     `✔ Categorías: ${cats.categories_created} nuevas, ${cats.concepts_created} conceptos nuevos ` +
       `(${cats.categories.length} categorías en total)`,
   );
@@ -124,8 +128,9 @@ async function main() {
 
   // 3. Comparación con la pestaña Agregado
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(bytes as any);
-  const ag = wb.getWorksheet('Agregado');
+  const isXlsx = bytes[0] === 0x50 && bytes[1] === 0x4b; // .xls no tiene pestaña Agregado con fórmulas que comparar
+  if (isXlsx) await wb.xlsx.load(bytes as any);
+  const ag = isXlsx ? wb.getWorksheet('Agregado') : undefined;
   if (!ag) {
     console.log('\n(El Excel no tiene pestaña "Agregado": no hay nada con lo que comparar.)');
     process.exit(0);

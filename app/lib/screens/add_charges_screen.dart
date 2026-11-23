@@ -250,7 +250,7 @@ class _ExcelUploadState extends State<_ExcelUpload> {
   bool _busy = false;
 
   Future<void> _pick() async {
-    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['xlsx']);
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['xlsx', 'xls']);
     if (file == null) return;
     final bytes = await file.readAsBytes();
     setState(() {
@@ -299,9 +299,10 @@ class _ExcelUploadState extends State<_ExcelUpload> {
                 Text('Formato del Excel', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 8),
                 const Text(
-                  'Una hoja con las columnas Fecha · Movimiento · Mas datos · Importe · Saldo '
-                  '(como la pestaña "Total gastos"). Los gastos en negativo y los ingresos en positivo. '
-                  'Las fechas pueden ser dd/mm/aaaa o fechas de Excel.',
+                  'Un .xlsx o .xls con las columnas Fecha · Movimiento · Más datos · Importe · Saldo, '
+                  'como la pestaña "Total gastos" o el extracto que descargas del banco (puede tener filas '
+                  'de título encima y columnas de más, como "Fecha valor"). Los gastos en negativo y los '
+                  'ingresos en positivo. Las fechas pueden ser dd/mm/aaaa o fechas de Excel.',
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -314,7 +315,7 @@ class _ExcelUploadState extends State<_ExcelUpload> {
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _pick,
                     icon: const Icon(Icons.folder_open),
-                    label: Text(_name == null ? 'Elegir fichero .xlsx' : 'Elegir otro fichero'),
+                    label: Text(_name == null ? 'Elegir fichero .xlsx o .xls' : 'Elegir otro fichero'),
                   ),
                   if (_name != null) Chip(avatar: const Icon(Icons.description, size: 18), label: Text(_name!)),
                   if (_busy) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
