@@ -89,7 +89,7 @@ categoriesRouter.delete('/concepts/:conceptId', async (req, res) => {
   res.status(204).end();
 });
 
-/** Movimientos que no encajan en ninguna categoría (irán a OTROS), agrupados. */
+/** Movimientos que no encajan en ninguna categoría (irán a OTROS), agrupados y del más reciente al más antiguo. */
 categoriesRouter.get('/uncategorized', async (req, res) => {
   const { transactions } = await loadCategorized(sb(req));
   const groups = new Map<string, { movement: string; count: number; total: number; last_date: string }>();
@@ -102,7 +102,12 @@ categoriesRouter.get('/uncategorized', async (req, res) => {
     if (t.date > g.last_date) g.last_date = t.date;
     groups.set(key, g);
   }
-  res.json([...groups.values()].sort((a, b) => b.count - a.count || a.movement.localeCompare(b.movement)));
+  // Más recientes primero (por la fecha del último cargo de cada movimiento).
+  res.json(
+    [...groups.values()].sort(
+      (a, b) => b.last_date.localeCompare(a.last_date) || b.count - a.count || a.movement.localeCompare(b.movement),
+    ),
+  );
 });
 
 /**
