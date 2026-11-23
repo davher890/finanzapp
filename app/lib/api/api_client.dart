@@ -82,6 +82,29 @@ class ApiClient extends ChangeNotifier {
 
   Future<void> logout() => _setSession(null);
 
+  /// Envía el email de recuperación. [redirectTo] es la URL de la app web a la que llevará el enlace
+  /// (en móvil se omite y la API usa la URL pública del front).
+  Future<void> forgotPassword(String email, {String? redirectTo}) async {
+    await _request('POST', '/auth/forgot-password',
+        body: {'email': email, 'redirect_to': ?redirectTo}, auth: false);
+  }
+
+  /// Fija la nueva contraseña con los tokens del enlace de recuperación y deja la sesión iniciada.
+  Future<void> resetPassword({required String accessToken, required String refreshToken, required String password}) async {
+    final res = await _request('POST', '/auth/reset-password',
+        body: {'access_token': accessToken, 'refresh_token': refreshToken, 'password': password}, auth: false);
+    await _setSession(Session.fromJson(res as Map<String, dynamic>));
+  }
+
+  /// Cambia la contraseña (exige la actual). La API devuelve una sesión nueva, que sustituye a la anterior.
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    final res = await _request('POST', '/auth/change-password',
+        body: {'current_password': currentPassword, 'new_password': newPassword});
+    await _setSession(Session.fromJson(res as Map<String, dynamic>));
+  }
+
+  Future<Map<String, dynamic>> me() async => await get('/auth/me') as Map<String, dynamic>;
+
   Future<bool> _refresh() async {
     final s = _session;
     if (s == null) return false;

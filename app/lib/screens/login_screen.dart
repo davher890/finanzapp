@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import 'password_screens.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.initialError});
+
+  /// Aviso a mostrar al abrir (p. ej. un enlace de recuperación caducado).
+  final String? initialError;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -17,7 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _signup = false;
   bool _loading = false;
   bool _obscure = true;
-  String? _error;
+  late String? _error = widget.initialError;
   String? _info;
 
   @override
@@ -119,6 +123,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           validator: (v) => v == null || v.length < 6 ? 'Mínimo 6 caracteres' : null,
                           onFieldSubmitted: (_) => _signup ? null : _submit(),
                         ),
+                        if (!_signup)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _loading
+                                  ? null
+                                  : () => Navigator.of(context).push(MaterialPageRoute(
+                                        builder: (_) => ForgotPasswordScreen(initialEmail: _email.text.trim()),
+                                      )),
+                              child: const Text('¿Has olvidado tu contraseña?'),
+                            ),
+                          ),
                         if (_signup) ...[
                           const SizedBox(height: 12),
                           TextFormField(

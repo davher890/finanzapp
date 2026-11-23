@@ -36,6 +36,12 @@ Al importar la pestaña Metadata, NOMINA se crea como *ingreso*, BIZUM y TRANSFE
    Si la base de datos se creó con una versión anterior de ese fichero, ejecuta también [`api/sql/002_transactions_unique.sql`](api/sql/002_transactions_unique.sql): borra cargos repetidos y añade la restricción de unicidad.
 2. En **Project Settings → API → Exposed schemas** (Data API) añade `finanzapp`.
 3. En **Authentication → Providers** deja activo *Email*. Si "Confirm email" está activado, tras registrarse hay que confirmar el correo antes de entrar.
+4. En **Authentication → URL Configuration** (necesario para "¿Has olvidado tu contraseña?"):
+   - **Site URL**: `https://finanzapp-app.vercel.app`
+   - **Redirect URLs**: `https://finanzapp-app.vercel.app/**` y, para probar en local, `http://localhost:8765/**`
+
+   El enlace del email de recuperación vuelve a la app web con los tokens en la URL (`#access_token=…&type=recovery`); la app los lee, los borra de la barra de direcciones y muestra la pantalla de nueva contraseña. Si la URL de vuelta no está en la lista, Supabase manda al Site URL.
+   Con el servidor de correo por defecto de Supabase solo se envían unos pocos emails por hora; para uso real conviene configurar un SMTP propio en **Authentication → Emails**.
 
 ## 2. API (`api/`)
 
@@ -65,7 +71,10 @@ FINANZAPP_TEST_XLSX=/ruta/Gastos.xlsx npm test        # además reproduce la pes
 | POST | `/auth/signup` | Registro `{email, password}` |
 | POST | `/auth/login` | Login → `access_token`, `refresh_token` |
 | POST | `/auth/refresh` | Renueva la sesión |
-| GET | `/auth/me` | Usuario actual |
+| POST | `/auth/forgot-password` | Envía el email de recuperación `{email, redirect_to?}` (responde igual exista o no la cuenta) |
+| POST | `/auth/reset-password` | Nueva contraseña con los tokens del enlace `{access_token, refresh_token, password}` → sesión |
+| POST | `/auth/change-password` | Cambia la contraseña desde el perfil `{current_password, new_password}` → sesión nueva |
+| GET | `/auth/me` | Usuario actual (email, fecha de alta, último acceso) |
 | GET | `/categories` | Categorías con conceptos y nº/total de cargos |
 | POST | `/categories` | Crear `{name, kind}` |
 | PATCH / DELETE | `/categories/:id` | Editar / borrar |
@@ -95,7 +104,7 @@ flutter run -d chrome --dart-define=API_URL=http://localhost:3000
 
 En el emulador de Android usa `API_URL=http://10.0.2.2:3000`.
 
-Pantallas: login/registro, inicio (qué es FinanzApp), añadir cargos (manual o Excel), categorías (crear, conceptos, importar Metadata, asignar los "sin categoría"), meses (resumen tipo Agregado) y búsqueda por expresión regular.
+Pantallas: login/registro (con "¿Has olvidado tu contraseña?"), nueva contraseña (al abrir el enlace del email), perfil (datos de la cuenta y cambio de contraseña), inicio (qué es FinanzApp), añadir cargos (manual o Excel), categorías (crear, conceptos, importar Metadata, asignar los "sin categoría"), meses (resumen tipo Agregado) y búsqueda por expresión regular.
 
 ### APK de Android e instalación en el móvil
 
@@ -129,7 +138,7 @@ Dos proyectos de Vercel apuntando al mismo repositorio:
 
 **API** — Root Directory: `api`
 - Vercel detecta Express (`src/index.ts` exporta la app).
-- Variables: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `CORS_ORIGIN=https://<dominio-del-front>.vercel.app`.
+- Variables: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `CORS_ORIGIN=https://<dominio-del-front>.vercel.app` y `APP_URL=https://finanzapp-app.vercel.app` (adónde lleva el enlace de recuperación cuando se pide desde el móvil).
 
 **Front** — Root Directory: `app`
 - [`app/vercel.json`](app/vercel.json) descarga Flutter estable, compila la web y publica `build/web`.

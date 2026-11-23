@@ -5,6 +5,7 @@ import 'add_charges_screen.dart';
 import 'categories_screen.dart';
 import 'home_screen.dart';
 import 'months_screen.dart';
+import 'profile_screen.dart';
 import 'search_screen.dart';
 
 class _Section {
@@ -20,6 +21,7 @@ const _sections = [
   _Section('Categorías', Icons.category_outlined, Icons.category),
   _Section('Meses', Icons.calendar_month_outlined, Icons.calendar_month),
   _Section('Búsqueda', Icons.manage_search_outlined, Icons.manage_search),
+  _Section('Perfil', Icons.person_outline, Icons.person),
 ];
 
 /// Estructura principal con el menú: lateral en pantallas anchas y cajón en móvil.
@@ -40,7 +42,8 @@ class _ShellState extends State<Shell> {
         1 => const AddChargesScreen(),
         2 => const CategoriesScreen(),
         3 => const MonthsScreen(),
-        _ => const SearchScreen(),
+        4 => const SearchScreen(),
+        _ => const ProfileScreen(),
       };
 
   Future<void> _logout() async {
