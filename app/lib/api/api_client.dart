@@ -128,6 +128,9 @@ class ApiClient extends ChangeNotifier {
   Future<dynamic> addConcept(int categoryId, String pattern) =>
       post('/categories/$categoryId/concepts', {'pattern': pattern});
   Future<void> deleteConcept(int id) => _request('DELETE', '/categories/concepts/$id');
+  /// Alta de varios conceptos a la vez: [{category_id, pattern}]. Devuelve {created, skipped}.
+  Future<Map<String, dynamic>> addConceptsBulk(List<Map<String, dynamic>> items) async =>
+      await post('/categories/concepts/bulk', {'items': items}) as Map<String, dynamic>;
   Future<dynamic> importCategories(Uint8List bytes, String filename) =>
       upload('/categories/import', bytes, filename);
 

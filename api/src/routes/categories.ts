@@ -5,6 +5,7 @@ import { requireAuth, sb } from '../lib/auth.js';
 import { check, HttpError } from '../lib/supabase.js';
 import { loadCategories, loadCategorized } from '../lib/data.js';
 import { parseCategoriesWorkbook } from '../lib/excel.js';
+import { uncategorizedWithSuggestions, type OthersHit } from '../lib/uncategorized.js';
 
 export const categoriesRouter = Router();
 categoriesRouter.use(requireAuth);
@@ -89,25 +90,53 @@ categoriesRouter.delete('/concepts/:conceptId', async (req, res) => {
   res.status(204).end();
 });
 
-/** Movimientos que no encajan en ninguna categoría (irán a OTROS), agrupados y del más reciente al más antiguo. */
+/** Movimientos que no encajan en ninguna categoría (irán a OTROS), del más reciente al más antiguo, con sugerencias. */
 categoriesRouter.get('/uncategorized', async (req, res) => {
-  const { transactions } = await loadCategorized(sb(req));
-  const groups = new Map<string, { movement: string; count: number; total: number; last_date: string }>();
-  for (const t of transactions) {
-    if (t.category_id != null) continue;
-    const key = t.movement.trim();
-    const g = groups.get(key) ?? { movement: key, count: 0, total: 0, last_date: t.date };
-    g.count++;
-    g.total = Math.round((g.total + t.amount) * 100) / 100;
-    if (t.date > g.last_date) g.last_date = t.date;
-    groups.set(key, g);
+  const client = sb(req);
+  const { categories, transactions } = await loadCategorized(client);
+  const movements = [...new Set(transactions.filter((t) => t.category_id == null).map((t) => t.movement.trim()))];
+  res.json(uncategorizedWithSuggestions(categories, transactions, await othersHits(client, movements)));
+});
+
+/**
+ * Lo que otros usuarios tienen asignado a estos mismos movimientos (función finanzapp.suggest_from_others,
+ * sql/003). Si la función aún no existe en la base de datos, se sigue sin estas sugerencias.
+ */
+async function othersHits(client: ReturnType<typeof sb>, movements: string[]): Promise<OthersHit[]> {
+  if (!movements.length) return [];
+  const out: OthersHit[] = [];
+  for (let i = 0; i < movements.length; i += 1000) {
+    const { data, error } = await client.rpc('suggest_from_others', { movements: movements.slice(i, i + 1000) });
+    if (error) {
+      console.warn('suggest_from_others no disponible:', error.code, error.message);
+      return out;
+    }
+    out.push(...((data ?? []) as OthersHit[]));
   }
-  // Más recientes primero (por la fecha del último cargo de cada movimiento).
-  res.json(
-    [...groups.values()].sort(
-      (a, b) => b.last_date.localeCompare(a.last_date) || b.count - a.count || a.movement.localeCompare(b.movement),
-    ),
-  );
+  return out;
+}
+
+/**
+ * Alta de varios conceptos de una vez (p. ej. aceptar todas las sugerencias seguras).
+ * Los que ya existen en esa categoría se ignoran.
+ */
+categoriesRouter.post('/concepts/bulk', async (req, res) => {
+  const { items } = z
+    .object({
+      items: z
+        .array(z.object({ category_id: id, pattern: z.string().trim().min(1).max(200) }))
+        .min(1)
+        .max(500),
+    })
+    .parse(req.body);
+  const unique = [...new Map(items.map((i) => [`${i.category_id}|${i.pattern}`, i])).values()];
+  const created = check(
+    await sb(req)
+      .from('concepts')
+      .upsert(unique, { onConflict: 'category_id,pattern', ignoreDuplicates: true })
+      .select('id, category_id, pattern'),
+  ) as unknown[];
+  res.status(201).json({ created: created.length, skipped: items.length - created.length });
 });
 
 /**

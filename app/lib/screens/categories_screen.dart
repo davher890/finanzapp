@@ -112,23 +112,110 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     });
   }
 
+  List<Map<String, dynamic>> _suggestionsOf(Map<String, dynamic> u) =>
+      ((u['suggestions'] as List?) ?? const []).cast<Map<String, dynamic>>();
+
+  String _patternOf(Map<String, dynamic> u) => (u['suggested_pattern'] as String?) ?? (u['movement'] as String);
+
+  /// Elegir categoría a mano: primero las sugeridas, después todas.
   Future<void> _assign(Map<String, dynamic> u) async {
+    final suggested = _suggestionsOf(u).map((s) => s['category_id'] as int).toSet();
     final id = await showDialog<int>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: Text('Asignar "${u['movement']}" a…'),
         children: [
-          for (final c in _categories!)
+          for (final s in _suggestionsOf(u))
             SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, c['id'] as int),
-              child: Text(c['name'] as String),
+              onPressed: () => Navigator.pop(ctx, s['category_id'] as int),
+              child: Row(children: [
+                const Icon(Icons.auto_awesome, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text(s['category'] as String)),
+                Text(_scoreLabel(s), style: Theme.of(ctx).textTheme.bodySmall),
+              ]),
             ),
+          if (suggested.isNotEmpty) const Divider(),
+          for (final c in _categories!)
+            if (!suggested.contains(c['id']))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, c['id'] as int),
+                child: Text(c['name'] as String),
+              ),
         ],
       ),
     );
     if (id == null) return;
-    await _guard(() => _api.addConcept(id, u['movement'] as String), ok: 'Concepto añadido');
+    await _addConcept(u, id);
   }
+
+  Future<void> _addConcept(Map<String, dynamic> u, int categoryId) async {
+    final name = _categories!.firstWhere((c) => c['id'] == categoryId)['name'];
+    final pattern = _patternOf(u);
+    await _guard(() => _api.addConcept(categoryId, pattern), ok: '"$pattern" añadido a $name');
+  }
+
+  /// Otros usuarios tienen el movimiento en una categoría que tú no tienes: la crea y asigna el concepto.
+  Future<void> _createAndAssign(Map<String, dynamic> u) async {
+    final nc = u['new_category'] as Map<String, dynamic>;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Crear la categoría ${nc['name']}'),
+        content: Text('Se creará la categoría ${nc['name']} (${kindLabels[nc['kind']] ?? nc['kind']}) '
+            'y se le añadirá el concepto "${_patternOf(u)}".'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Crear y asignar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _guard(() async {
+      final created = await _api.createCategory(nc['name'] as String, nc['kind'] as String) as Map<String, dynamic>;
+      await _api.addConcept(created['id'] as int, _patternOf(u));
+    }, ok: 'Categoría ${nc['name']} creada');
+  }
+
+  /// Acepta de una vez la primera sugerencia de todos los movimientos con sugerencia segura.
+  Future<void> _acceptAllStrong(List<Map<String, dynamic>> strong) async {
+    final byPattern = <String, Map<String, dynamic>>{};
+    for (final u in strong) {
+      byPattern.putIfAbsent(_patternOf(u), () => {'category_id': _suggestionsOf(u).first['category_id'], 'pattern': _patternOf(u)});
+    }
+    final names = {for (final c in _categories!) c['id']: c['name']};
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Aceptar ${strong.length} sugerencias'),
+        content: SizedBox(
+          width: 480,
+          height: 360,
+          child: ListView(children: [
+            for (final item in byPattern.values)
+              ListTile(
+                dense: true,
+                title: Text(item['pattern'] as String),
+                trailing: Text('${names[item['category_id']]}'),
+              ),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aceptar todas')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _guard(() async {
+      final r = await _api.addConceptsBulk(byPattern.values.toList());
+      if (mounted) showInfo(context, '${r['created']} conceptos añadidos');
+    });
+  }
+
+  String _scoreLabel(Map<String, dynamic> s) => s['source'] == 'others'
+      ? '${s['users']} ${s['users'] == 1 ? 'usuario' : 'usuarios'}'
+      : '${((s['score'] as num) * 100).round()} %';
 
   @override
   Widget build(BuildContext context) {
@@ -233,11 +320,30 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       return const EmptyState(icon: Icons.task_alt, message: 'Todos los cargos tienen categoría.');
     }
     final theme = Theme.of(context);
+    final strong = items.where((u) => u['strong'] == true && _suggestionsOf(u).isNotEmpty).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text(
-        'Estos movimientos no coinciden con ningún concepto y en el resumen mensual aparecen como OTROS. '
-        'Asígnalos a una categoría para clasificarlos (también los cargos pasados).',
-        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Text(
+              'Estos movimientos aparecen como OTROS en el resumen. Pulsa una sugerencia para asignarla '
+              '(también se clasifican los cargos pasados). Las resaltadas son seguras; las del icono de '
+              'personas las tienen así otros usuarios.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          if (strong.isNotEmpty)
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _acceptAllStrong(strong),
+              icon: const Icon(Icons.done_all),
+              label: Text('Aceptar ${strong.length} seguras'),
+            ),
+        ],
       ),
       const SizedBox(height: 12),
       Expanded(
@@ -245,24 +351,79 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           child: ListView.separated(
             itemCount: items.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final u = items[i];
-              return ListTile(
-                title: Text(u['movement'] as String),
-                subtitle: Text('${_plural(u['count'] as int, 'cargo')} · último ${dateLabel(u['last_date'] as String)}'),
-                trailing: Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Text(money(toDouble(u['total'])), style: TextStyle(color: amountColor(context, toDouble(u['total'])))),
-                  OutlinedButton(
-                    onPressed: _busy || _categories!.isEmpty ? null : () => _assign(u),
-                    child: const Text('Asignar'),
-                  ),
-                ]),
-              );
-            },
+            itemBuilder: (context, i) => _uncategorizedRow(items[i]),
           ),
         ),
       ),
     ]);
+  }
+
+  Widget _uncategorizedRow(Map<String, dynamic> u) {
+    final theme = Theme.of(context);
+    final suggestions = _suggestionsOf(u);
+    final pattern = _patternOf(u);
+    final patternMovements = (u['pattern_movements'] as int?) ?? 1;
+    final newCategory = u['new_category'] as Map<String, dynamic>?;
+    final strong = u['strong'] == true;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(u['movement'] as String, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 2),
+              Text('${_plural(u['count'] as int, 'cargo')} · último ${dateLabel(u['last_date'] as String)}',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ]),
+          ),
+          Text(money(toDouble(u['total'])), style: TextStyle(color: amountColor(context, toDouble(u['total'])))),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _busy || _categories!.isEmpty ? null : () => _assign(u),
+            child: const Text('Elegir…'),
+          ),
+        ]),
+        if (suggestions.isNotEmpty || newCategory != null) ...[
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            for (final (i, s) in suggestions.indexed)
+              Tooltip(
+                message: s['source'] == 'others'
+                    ? '${_scoreLabel(s)} ${s['users'] == 1 ? 'tiene' : 'tienen'} este movimiento en ${s['category']}'
+                    : 'Parecido a tus conceptos de ${s['category']}',
+                child: ActionChip(
+                  avatar: Icon(
+                    s['source'] == 'others' ? Icons.people_alt_outlined : (i == 0 && strong ? Icons.check : Icons.auto_awesome),
+                    size: 16,
+                  ),
+                  label: Text('${s['category']} · ${_scoreLabel(s)}'),
+                  backgroundColor: i == 0 && strong ? theme.colorScheme.secondaryContainer : null,
+                  onPressed: _busy ? null : () => _addConcept(u, s['category_id'] as int),
+                ),
+              ),
+            if (newCategory != null)
+              Tooltip(
+                message: '${newCategory['users']} ${newCategory['users'] == 1 ? 'usuario lo tiene' : 'usuarios lo tienen'} '
+                    'en ${newCategory['name']}, que tú no tienes',
+                child: ActionChip(
+                  avatar: const Icon(Icons.add, size: 16),
+                  label: Text('Crear ${newCategory['name']} · ${newCategory['users']} '
+                      '${newCategory['users'] == 1 ? 'usuario' : 'usuarios'}'),
+                  onPressed: _busy ? null : () => _createAndAssign(u),
+                ),
+              ),
+          ]),
+          if (patternMovements > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('Se añadirá el concepto "$pattern", que cubre $patternMovements movimientos parecidos.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ),
+        ],
+      ]),
+    );
   }
 }
 

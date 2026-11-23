@@ -17,6 +17,11 @@ finanzapp/
 | Columna **Categoria** (`COUNTIF` sobre Metadata) | se calcula en la API: la primera categoría (por orden) con un concepto que coincide. Sin distinguir mayúsculas, con comodines `*` y `?`, espacios repetidos colapsados |
 | Pestaña **Agregado** | `GET /reports/summary/:mes` y pantalla **Meses** |
 
+**Sugerencias de categoría.** Para cada movimiento sin categoría se proponen hasta 3 categorías:
+- **Otros usuarios** ya tienen ese mismo movimiento asignado (se empareja por nombre de categoría; si tú no la tienes, se ofrece crearla). Lo hace la función `finanzapp.suggest_from_others` (`sql/003`): recibe solo tus movimientos y devuelve el nombre de la categoría y cuántos usuarios la usan, nunca conceptos, importes ni identidades de otros.
+- **Parecido a tus conceptos** (trigramas de caracteres + TF-IDF, sin servicios externos). Con los datos reales acierta la 1ª sugerencia ~65 % de las veces y, cuando la puntuación es ≥ 50 % ("segura"), ~93 %. Las de menos del 25 % no se muestran.
+- Si varios movimientos solo se diferencian en un código tras `*` (`AMAZON* 5S5K607T5`), se propone un concepto con comodín (`AMAZON*`).
+
 **Ficheros admitidos.** `.xlsx` y `.xls` (el extracto que descarga el banco, incluidos los `.xls` que en realidad son HTML). Se busca la fila con las cabeceras `Fecha`, `Movimiento`, `Más datos`, `Importe` y `Saldo` en las 15 primeras filas, así que puede haber títulos encima y columnas de más (como `Fecha valor`). Los textos en formato español (`-41,76`, `23/11/2026`) se interpretan correctamente.
 
 **Cargos únicos.** Un cargo es único por `(usuario, fecha, movimiento, más datos, importe, saldo)`; la base de datos lo garantiza con la restricción `transactions_unique_charge` (un "más datos" o saldo vacío cuenta como igual a otro vacío). Al añadir un cargo a mano que ya existe, la API responde 409. Al subir un Excel se omiten los cargos que ya existen y las filas repetidas dentro del propio fichero, así que subir el mismo fichero dos veces no duplica nada.
@@ -34,6 +39,7 @@ Al importar la pestaña Metadata, NOMINA se crea como *ingreso*, BIZUM y TRANSFE
 
 1. En el **SQL Editor** del proyecto ejecuta [`api/sql/001_finanzapp.sql`](api/sql/001_finanzapp.sql). Crea el esquema `finanzapp`, las tablas, la vista `months` y las políticas RLS (cada usuario solo ve sus datos).
    Si la base de datos se creó con una versión anterior de ese fichero, ejecuta también [`api/sql/002_transactions_unique.sql`](api/sql/002_transactions_unique.sql): borra cargos repetidos y añade la restricción de unicidad.
+   Para que las sugerencias de categoría tengan en cuenta lo que han asignado otros usuarios, ejecuta [`api/sql/003_suggest_from_others.sql`](api/sql/003_suggest_from_others.sql) (sin ella, las sugerencias funcionan solo con tus datos).
 2. En **Project Settings → API → Exposed schemas** (Data API) añade `finanzapp`.
 3. En **Authentication → Providers** deja activo *Email*. Si "Confirm email" está activado, tras registrarse hay que confirmar el correo antes de entrar.
 4. En **Authentication → URL Configuration** (necesario para "¿Has olvidado tu contraseña?"):
@@ -81,7 +87,8 @@ FINANZAPP_TEST_XLSX=/ruta/Gastos.xlsx npm test        # además reproduce la pes
 | PUT | `/categories/order` | Reordenar `{ids: [...]}` |
 | POST | `/categories/:id/concepts` | Añadir concepto `{pattern}` |
 | DELETE | `/categories/concepts/:id` | Quitar concepto |
-| GET | `/categories/uncategorized` | Movimientos sin categoría (OTROS) |
+| GET | `/categories/uncategorized` | Movimientos sin categoría (OTROS), del más reciente al más antiguo, con hasta 3 categorías sugeridas |
+| POST | `/categories/concepts/bulk` | Alta de varios conceptos `{items: [{category_id, pattern}]}` (los repetidos se ignoran) |
 | POST | `/categories/import` | Importar la hoja `Metadata` de un .xlsx/.xls (multipart `file`) |
 | GET | `/transactions?month=YYYY-MM` | Cargos con su categoría |
 | POST | `/transactions` | Cargo manual `{date, movement, details?, amount, balance?}` |
