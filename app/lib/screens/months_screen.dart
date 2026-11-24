@@ -248,8 +248,112 @@ class _MonthSummaryViewState extends State<MonthSummaryView> {
               bold: true,
             ),
           ),
+          const SizedBox(height: 20),
+          _MonthTransactions(transactions: txs),
         ],
       ),
+    );
+  }
+}
+
+/// Todos los cargos del mes, del más reciente al más antiguo, de 20 en 20.
+class _MonthTransactions extends StatefulWidget {
+  const _MonthTransactions({required this.transactions});
+  final List<Map<String, dynamic>> transactions;
+
+  @override
+  State<_MonthTransactions> createState() => _MonthTransactionsState();
+}
+
+class _MonthTransactionsState extends State<_MonthTransactions> {
+  static const _pageSize = 20;
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sorted = [...widget.transactions]..sort((a, b) {
+        final byDate = (b['date'] as String).compareTo(a['date'] as String);
+        return byDate != 0 ? byDate : (b['id'] as int).compareTo(a['id'] as int);
+      });
+    final total = sorted.length;
+    final pages = (total / _pageSize).ceil().clamp(1, 1 << 30);
+    final page = _page.clamp(0, pages - 1);
+    final from = page * _pageSize;
+    final to = (from + _pageSize).clamp(0, total);
+    final visible = sorted.sublist(from, to);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Container(
+          color: theme.colorScheme.surfaceContainerHighest,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(children: [
+            Expanded(child: Text('Cargos del mes', style: theme.textTheme.titleMedium)),
+            Text('$total ${total == 1 ? 'cargo' : 'cargos'}',
+                style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          ]),
+        ),
+        if (total == 0)
+          const Padding(padding: EdgeInsets.all(16), child: Text('No hay cargos este mes.'))
+        else
+          for (final (i, t) in visible.indexed) ...[
+            if (i > 0) const Divider(height: 1),
+            ListTile(
+              dense: true,
+              leading: SizedBox(
+                width: 44,
+                child: Text(dateLabel(t['date'] as String).substring(0, 5),
+                    style: theme.textTheme.labelLarge, textAlign: TextAlign.center),
+              ),
+              title: Text(t['movement'] as String),
+              subtitle: Text([
+                (t['category'] as String?) ?? 'OTROS',
+                if (t['details'] != null) t['details'] as String,
+              ].join(' · ')),
+              trailing: Text(
+                money(toDouble(t['amount'])),
+                style: TextStyle(color: amountColor(context, toDouble(t['amount'])), fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        if (pages > 1) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(children: [
+              IconButton(
+                tooltip: 'Primera página',
+                icon: const Icon(Icons.first_page),
+                onPressed: page > 0 ? () => setState(() => _page = 0) : null,
+              ),
+              IconButton(
+                tooltip: 'Anterior',
+                icon: const Icon(Icons.chevron_left),
+                onPressed: page > 0 ? () => setState(() => _page = page - 1) : null,
+              ),
+              Expanded(
+                child: Text(
+                  '${from + 1}–$to de $total · página ${page + 1} de $pages',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Siguiente',
+                icon: const Icon(Icons.chevron_right),
+                onPressed: page < pages - 1 ? () => setState(() => _page = page + 1) : null,
+              ),
+              IconButton(
+                tooltip: 'Última página',
+                icon: const Icon(Icons.last_page),
+                onPressed: page < pages - 1 ? () => setState(() => _page = pages - 1) : null,
+              ),
+            ]),
+          ),
+        ],
+      ]),
     );
   }
 }
