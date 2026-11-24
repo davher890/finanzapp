@@ -70,11 +70,28 @@ reportsRouter.get('/search', async (req, res) => {
     total = round(total + t.amount);
   }
   const months = [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
+
+  // Total por año, a partir de los meses (meses = meses con algún cargo de la búsqueda).
+  const byYear = new Map<string, { year: number; count: number; total: number; expenses: number; income: number; months: number }>();
+  for (const m of months) {
+    const key = m.month.slice(0, 4);
+    const y = byYear.get(key) ?? { year: Number(key), count: 0, total: 0, expenses: 0, income: 0, months: 0 };
+    y.count += m.count;
+    y.total = round(y.total + m.total);
+    y.expenses = round(y.expenses + m.expenses);
+    y.income = round(y.income + m.income);
+    y.months++;
+    byYear.set(key, y);
+  }
+  const years = [...byYear.values()]
+    .sort((a, b) => b.year - a.year)
+    .map((y) => ({ ...y, average_per_month: round(y.total / y.months) }));
   res.json({
     query: q,
     count: matches.length,
     total,
     average_per_month: months.length ? round(total / months.length) : 0,
+    by_year: years,
     by_month: months,
     transactions: matches.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id),
   });

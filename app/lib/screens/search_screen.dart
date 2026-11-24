@@ -126,12 +126,18 @@ class _SearchScreenState extends State<SearchScreen> {
               const SizedBox(height: 20),
               LayoutBuilder(builder: (context, c) {
                 final byMonth = _ByMonth(rows: (r['by_month'] as List).cast<Map<String, dynamic>>());
+                final byYear = _ByYear(rows: ((r['by_year'] as List?) ?? const []).cast<Map<String, dynamic>>());
+                final totals = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  byYear,
+                  const SizedBox(height: 20),
+                  byMonth,
+                ]);
                 final list = _TxList(rows: (r['transactions'] as List).cast<Map<String, dynamic>>());
                 if (c.maxWidth < 800) {
-                  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [byMonth, const SizedBox(height: 20), list]);
+                  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [totals, const SizedBox(height: 20), list]);
                 }
                 return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(width: 340, child: byMonth),
+                  SizedBox(width: 340, child: totals),
                   const SizedBox(width: 20),
                   Expanded(child: list),
                 ]);
@@ -140,6 +146,36 @@ class _SearchScreenState extends State<SearchScreen> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ByYear extends StatelessWidget {
+  const _ByYear({required this.rows});
+  final List<Map<String, dynamic>> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Container(
+          color: theme.colorScheme.surfaceContainerHighest,
+          padding: const EdgeInsets.all(16),
+          child: Text('Total por año', style: theme.textTheme.titleMedium),
+        ),
+        for (final y in rows)
+          ListTile(
+            dense: true,
+            title: Text('${y['year']}'),
+            subtitle: Text('${y['count']} cargos · ${y['months']} ${y['months'] == 1 ? 'mes' : 'meses'}\n'
+                'Media ${money(toDouble(y['average_per_month']))} al mes'),
+            isThreeLine: true,
+            trailing: Text(money(toDouble(y['total'])),
+                style: TextStyle(color: amountColor(context, toDouble(y['total'])), fontWeight: FontWeight.w600)),
+          ),
+      ]),
     );
   }
 }
